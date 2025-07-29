@@ -71,15 +71,14 @@ localhost:2181, localhost:2182, localhost:2183
 
 Create Test Topic
 
-docker exec -it kafka-1 kafka-topics.sh \
-  --create --topic test-topic \
-  --bootstrap-server localhost:9092 \
-  --partitions 3 --replication-factor 3
+ocker exec -it kafka-1 kafka-topics.sh --create --topic test-cluster --bootstrap-server kafka-1:19092 --partitions 3 --replication-factor 3
+Created topic test-cluster.
 
 List Topics
 
-docker exec -it kafka-1 kafka-topics.sh \
-  --list --bootstrap-server localhost:9092
+docker exec -it kafka-1 kafka-topics.sh --list --bootstrap-server kafka-1:19092
+__consumer_offsets
+test-cluster
 
 
 ⸻
