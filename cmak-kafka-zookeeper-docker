@@ -1,0 +1,268 @@
+Create custom cmak for kafka
+
+Ref:https://github.com/vimagick/dockerfiles/blob/master/cmak/Dockerfile
+
+(base) ~/Documents/projects/kafka-381/stackone/stack3/stack4 ᐅ cat Dockerfile.cmak
+#
+# Dockerfile for cmak
+#
+
+FROM debian:bullseye
+MAINTAINER EasyPi Software Foundation
+
+ARG SCALA_VERSION=2.12.16
+ARG SBT_VERSION=1.6.2
+ARG CMAK_VERSION=3.0.0.6
+
+RUN set -xe \
+    && apt update \
+    && apt install -y openjdk-11-jre-headless curl wget \
+    && wget -q https://downloads.lightbend.com/scala/$SCALA_VERSION/scala-$SCALA_VERSION.deb -O scala.deb \
+    && wget -q https://scala.jfrog.io/artifactory/debian/sbt-1.6.2.deb -O sbt.deb \
+    && dpkg -i scala.deb sbt.deb \
+    && rm scala.deb sbt.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/cmak
+
+RUN set -xe \
+    && mkdir src \
+    && curl -sSL https://github.com/yahoo/CMAK/archive/$CMAK_VERSION.tar.gz | tar xz --strip 1 -C src \
+    && cd src \
+    && sbt clean universal:packageZipTarball \
+    && cd .. \
+    && tar xzf src/target/universal/cmak-$CMAK_VERSION.tgz --strip 1 \
+    && rm -rf src
+
+VOLUME /opt/cmak/conf
+
+EXPOSE 9000
+
+ENTRYPOINT ["bin/cmak"]
+CMD ["-Dconfig.file=conf/application.conf", "-Dhttp.port=9000", "-Dpidfile.path=/dev/null"]
+
+
+Build thne image:
+docker build -t custom-cmak -f Dockerfile.cmak .
+
+
+
+Update docker-compose.yaml as below:
+
+
+(base) ~/Documents/projects/kafka-381/stackone/stack3/stack4 ᐅ cat docker-compose.yaml
+version: '3.8'
+
+services:
+  # ZooKeeper Ensemble (3 nodes)
+  zookeeper-1:
+    image: docker.io/bitnami/zookeeper:3.8
+    hostname: zookeeper-1
+    container_name: zookeeper-1
+    restart: always
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_SERVER_ID: 1
+      ZOO_SERVERS: 0.0.0.0:2888:3888,zookeeper-2:2888:3888,zookeeper-3:2888:3888
+      ALLOW_ANONYMOUS_LOGIN: yes
+      ZOO_TICK_TIME: 2000
+      ZOO_INIT_LIMIT: 10
+      ZOO_SYNC_LIMIT: 5
+      ZOO_MAX_CLIENT_CNXNS: 60
+      ZOO_STANDALONE_ENABLED: false
+      ZOO_ADMINSERVER_ENABLED: false
+    volumes:
+      - zk1-data:/data
+      - zk1-datalog:/datalog
+    networks:
+      - app-mysql
+
+  zookeeper-2:
+    image: docker.io/bitnami/zookeeper:3.8
+    hostname: zookeeper-2
+    container_name: zookeeper-2
+    restart: always
+    ports:
+      - "2182:2181"
+    environment:
+      ZOO_SERVER_ID: 2
+      ZOO_SERVERS: zookeeper-1:2888:3888,0.0.0.0:2888:3888,zookeeper-3:2888:3888
+      ALLOW_ANONYMOUS_LOGIN: yes
+      ZOO_TICK_TIME: 2000
+      ZOO_INIT_LIMIT: 10
+      ZOO_SYNC_LIMIT: 5
+      ZOO_MAX_CLIENT_CNXNS: 60
+      ZOO_STANDALONE_ENABLED: false
+      ZOO_ADMINSERVER_ENABLED: false
+    volumes:
+      - zk2-data:/data
+      - zk2-datalog:/datalog
+    networks:
+      - app-mysql
+
+  zookeeper-3:
+    image: docker.io/bitnami/zookeeper:3.8
+    hostname: zookeeper-3
+    container_name: zookeeper-3
+    restart: always
+    ports:
+      - "2183:2181"
+    environment:
+      ZOO_SERVER_ID: 3
+      ZOO_SERVERS: zookeeper-1:2888:3888,zookeeper-2:2888:3888,0.0.0.0:2888:3888
+      ALLOW_ANONYMOUS_LOGIN: yes
+      ZOO_TICK_TIME: 2000
+      ZOO_INIT_LIMIT: 10
+      ZOO_SYNC_LIMIT: 5
+      ZOO_MAX_CLIENT_CNXNS: 60
+      ZOO_STANDALONE_ENABLED: false
+      ZOO_ADMINSERVER_ENABLED: false
+    volumes:
+      - zk3-data:/data
+      - zk3-datalog:/datalog
+    networks:
+      - app-mysql
+
+  # Kafka Cluster (3 nodes)
+  kafka-1:
+    image: docker.io/bitnami/kafka:3.4
+    container_name: kafka-1
+    hostname: kafka-1
+    depends_on:
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:19092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_CFG_MIN_INSYNC_REPLICAS: 2
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_CFG_DELETE_TOPIC_ENABLE: true
+      KAFKA_CFG_LOG_RETENTION_HOURS: 168
+      ALLOW_PLAINTEXT_LISTENER: yes
+    volumes:
+      - kafka1-data:/bitnami/kafka
+    networks:
+      - app-mysql
+
+  kafka-2:
+    image: docker.io/bitnami/kafka:3.4
+    container_name: kafka-2
+    hostname: kafka-2
+    depends_on:
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
+    ports:
+      - "9093:9093"
+      - "19093:19093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:19093,PLAINTEXT_HOST://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:19093,PLAINTEXT_HOST://localhost:9093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_CFG_MIN_INSYNC_REPLICAS: 2
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      ALLOW_PLAINTEXT_LISTENER: yes
+    volumes:
+      - kafka2-data:/bitnami/kafka
+    networks:
+      - app-mysql
+
+  kafka-3:
+    image: docker.io/bitnami/kafka:3.4
+    container_name: kafka-3
+    hostname: kafka-3
+    depends_on:
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
+    ports:
+      - "9094:9094"
+      - "19094:19094"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:19094,PLAINTEXT_HOST://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:19094,PLAINTEXT_HOST://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_CFG_MIN_INSYNC_REPLICAS: 2
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      ALLOW_PLAINTEXT_LISTENER: yes
+    volumes:
+      - kafka3-data:/bitnami/kafka
+    networks:
+      - app-mysql
+  cmak:
+    image: custom-cmak
+    container_name: cmak
+    ports:
+      - "9008:9000"
+    volumes:
+      - cmak-config:/opt/cmak/conf
+    environment:
+      ZK_HOSTS: "zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181"
+    networks:
+      - app-mysql
+networks:
+  app-mysql:
+    driver: bridge
+
+volumes:
+  # ZooKeeper volumes
+  zk1-data:
+  zk1-datalog:
+  zk2-data:
+  zk2-datalog:
+  zk3-data:
+  zk3-datalog:
+  # Kafka volumes
+  kafka1-data:
+  kafka2-data:
+  kafka3-data:
+  cmak-config:
+
+
+
+
+Run docker:
+docker-compose up -d
+
+
+docker exec -it kafka-1 kafka-topics.sh --create --topic test-cluster --bootstrap-server kafka-1:19092 --partitions 3 --replication-factor 3
+docker exec -it kafka-1 kafka-topics.sh --list --bootstrap-server kafka-1:19092
+
+
+
+Open localhost:9008
+
+Add cluster docker-kafka
+
+Zookeepers:	zookeeper-1:2181 zookeeper-2:2181 zookeeper-3:2181
+
+SAVE .
+
+
