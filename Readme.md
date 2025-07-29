@@ -1,7 +1,3 @@
-Here’s a clean and complete README.md file for your Kafka + ZooKeeper cluster project using Docker Compose:
-
-⸻
-
 
 # Kafka + ZooKeeper Cluster (3 Nodes Each) Using Docker Compose
 
