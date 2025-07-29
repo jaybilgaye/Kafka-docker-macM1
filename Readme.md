@@ -191,10 +191,4 @@ Check broker IDs	zkCli.sh <<< "ls /brokers/ids"
 	•	Replication settings ensure no data loss under single broker failure
 	•	Best for local testing, PoC, and learning production-grade Kafka
 
-⸻
 
-📜 License
-
-MIT
-
-Let me know if you want a PDF or downloadable `.md` version.
