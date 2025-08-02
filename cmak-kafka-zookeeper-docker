@@ -266,3 +266,52 @@ Zookeepers:	zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181
 SAVE .
 
 
+
+🔁 Safe Shutdown
+docker-compose stop kafka-1 kafka-2 kafka-3
+sleep 40
+docker-compose stop zookeeper-1 zookeeper-2 zookeeper-3
+
+
+✅ Safe Startup
+docker-compose up -d zookeeper-1 zookeeper-2 zookeeper-3
+sleep 40
+docker-compose up -d kafka-1 kafka-2 kafka-3
+
+
+
+Option A: Fully stop and start cleanly
+
+docker-compose down
+docker-compose up -d
+
+Option B: Fully stop and start it will remove volumes.
+
+docker-compose down
+docker-compose up -d
+
+
+
+
+Troubleshooting:
+
+
+✅ Quick Fix (Same as Kafka-2)
+
+Step-by-step:
+	1.	Check if node /brokers/ids/3 exists:
+docker exec -it zookeeper-1 zkCli.sh
+[zk] ls /brokers/ids
+
+
+docker-compose restart kafka-3
+
+docker-compose logs -f kafka-3
+
+
+
+Docker stop -volume prune.
+
+docker-compose down -v
+docker volume prune -f
+docker-compose up -d
